@@ -1,0 +1,15 @@
+{
+    "display_name": "系统面板",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "author": "墨月",
+    "version": "1.0.0",
+    "auto_update": false,
+    "hooks": {
+        "activate": "onActivate",
+        "enable": "onEnable",
+        "disable": "onDisable"
+    }
+}
