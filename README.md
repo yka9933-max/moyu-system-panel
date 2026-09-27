@@ -8,7 +8,7 @@
 在酒馆里打开「扩展」面板，找到「安装扩展」的输入框，填本仓库地址：
 
 ```
-https://gitee.com/<你的用户名>/moyu-system-panel
+https://github.com/yka9933-max/moyu-system-panel
 ```
 
 装完刷新页面，在扩展列表里确认「系统面板」是启用状态。酒馆的魔杖菜单里会多一个「系统面板」入口。
