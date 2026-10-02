@@ -1,10 +1,10 @@
 {
-    "display_name": "咩咩润色工具",
+    "display_name": "tutu",
     "loading_order": 110,
     "requires": [],
     "optional": [],
     "js": "index.js",
-    "author": "墨月",
+    "author": "tutu",
     "version": "1.0.0",
     "auto_update": false
 }

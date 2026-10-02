@@ -1,5 +1,5 @@
-// 咩咩润色工具 · SillyTavern 扩展入口
-// 由「咩咩工具箱 1.0.1」拆分而来，只保留正文翻译 / 润色模块；工具箱里的其他模块已全部移除。
+// tutu · SillyTavern 扩展入口
+// 一个本地扩展：把 AI 回复里的正文按你的要求翻译成目标语言，或直接润色改写。
 //
 // 与原脚本的差异只在宿主接口，业务逻辑（提示词组装、正文切分、保护标签、写回、事件流程）保持一致：
 //   getVariables / replaceVariables  → SillyTavern.getContext().extensionSettings + saveSettingsDebounced
@@ -198,18 +198,18 @@ function transferProtected(target,reference,current,tags) {
   return unprotectText(dest.text,now);
 }
 
-  const host=window.parent,doc=host.document,ID='__meemeTranslation01';
+  const host=window.parent,doc=host.document,ID='__tutuPolish';
   if(host[ID]){host[ID].open();return;}
-  const STORE='meeme_translation_v1';// 保存位置：SillyTavern.getContext().extensionSettings[STORE]
-  const KEY_STORE='meeme_translation_key_v1';
+  const STORE='tutu_polish_v1';// 保存位置：SillyTavern.getContext().extensionSettings[STORE]
+  const KEY_STORE='tutu_polish_key_v1';
   const originalFetch=host.fetch;
   const ctx=()=>host.SillyTavern.getContext();
   const defaults=()=>({mode:'translate',polishRules:'',target:'简体中文',rules:DEFAULT_RULES,terms:'',prePrompt:{text:'',role:'system'},postPrompt:{text:'',role:'system'},sendOriginal:false});
   let saved={};try{saved=ctx().extensionSettings[STORE]||{};}catch(_){}
   let config={base:'',model:'',maxTokens:8192,timeoutSeconds:300,thinkingMode:'auto',protectedTags:'',...saved.config},cards=saved.cards||{},backup=null;
   let library=Array.isArray(saved.library)?saved.library:[],editingTemplate=null,creatingTemplate=false,menuOpen=false,templateSerial=0;
-  const DEFAULT_TEMPLATE_ID='meeme-builtin-translation';
-  const POLISH_TEMPLATE_ID='meeme-builtin-polish';
+  const DEFAULT_TEMPLATE_ID='tutu-builtin-translation';
+  const POLISH_TEMPLATE_ID='tutu-builtin-polish';
   const isDefault=t=>t.id===DEFAULT_TEMPLATE_ID||t.id===POLISH_TEMPLATE_ID;
   for(const t of library)if(t.name==='翻译 · 已有设置'&&t.mode==='translate'&&t.data.target==='简体中文'&&t.data.rules===DEFAULT_RULES){
     for(const c of Object.values(cards))if(c.selections?.translate===t.id)c.selections.translate=DEFAULT_TEMPLATE_ID;
@@ -223,95 +223,95 @@ function transferProtected(target,reference,current,tags) {
   let enabled=false,secret='',run=null,blocked=false,waiters=[],generation=null,disposed=false,writing=false,debug=null,testRun=null,pendingStart=null;
   let outgoing=null,records=[];
   const redactions=new Set();
-  const root=doc.createElement('div');root.id='meeme-translation';
+  const root=doc.createElement('div');root.id='tutu-polish';
   root.innerHTML=`<style>
-#meeme-translation{position:fixed;right:16px;bottom:24px;z-index:10000;color:#eee8ff;font:14px/1.55 system-ui;text-align:left;color-scheme:dark}
-#meeme-translation *{box-sizing:border-box}#meeme-translation [hidden]{display:none!important}
-#meeme-translation section{width:min(500px,calc(100vw - 32px));height:min(760px,calc(100dvh - 100px));display:flex;flex-direction:column;background:linear-gradient(140deg,#170d2b,#090e1d);border:1px solid #7144a5;border-radius:16px;box-shadow:0 12px 45px #0009;overflow:hidden;margin-bottom:8px}
-#meeme-translation .mt-head{padding:16px 18px 12px;border-bottom:1px solid #413055;flex-shrink:0;background:#170f25}
-#meeme-translation .mt-heading{display:flex;gap:10px;align-items:center;justify-content:space-between}#meeme-translation .mt-heading strong{font-size:16px}
-#meeme-translation .mt-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 16px 12px;scrollbar-width:thin;scrollbar-color:#765391 #100d1e}
-#meeme-translation .mt-mode{padding:6px 0}#meeme-translation .mt-mode button{width:100%;margin:0}
-#meeme-translation button{font:inherit;color:#e8ddf8;background:#241735;border:1px solid #684583;border-radius:8px;padding:8px 10px;margin:3px 0;cursor:pointer;transition:background .16s,border-color .16s,transform .16s}
-#meeme-translation button:hover{background:#352047;border-color:#a17ac4}#meeme-translation button:active{transform:scale(.98)}#meeme-translation button:focus-visible{outline:2px solid #e4c0ff;outline-offset:2px}
-#meeme-translation button[data-on=true]{border-color:#26d2bd;background:#123c3b;color:#affff2}
-#meeme-translation button:disabled{opacity:.5;cursor:wait}#meeme-translation button.mt-compact{padding:5px 10px;font-size:12px}
-#meeme-translation .mt-group{border-top:1px dashed #60417f}
-#meeme-translation .mt-fold{width:100%;margin:0;border:0;border-radius:0;background:#140f23;padding:13px 9px;text-align:left;display:flex;align-items:center;gap:9px;position:sticky;top:0;z-index:1;font-weight:600}
-#meeme-translation .mt-fold::before{content:'▸';display:inline-block;color:#ad85d5;transition:transform .2s}#meeme-translation .mt-fold[aria-expanded=true]{background:#332044;color:#edcaff;box-shadow:inset 3px 0 #b478e9}
-#meeme-translation .mt-fold[aria-expanded=true]::before{transform:rotate(90deg)}
-#meeme-translation .mt-pane{display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows .2s ease,opacity .18s,visibility .2s}
-#meeme-translation .mt-pane[data-expanded=true]{grid-template-rows:1fr;opacity:1;visibility:visible}
-#meeme-translation .mt-pane-inner{min-height:0;overflow:hidden}#meeme-translation .mt-pad{padding:3px 9px 16px}
-#meeme-translation label{display:block;margin:10px 0;color:#d5c7e4}#meeme-translation input,#meeme-translation textarea,#meeme-translation select{font:inherit;width:100%;color:#eee;background:#0b0c19;border:1px solid #574168;border-radius:7px;padding:8px;margin-top:5px}
-#meeme-translation input[type=checkbox]{width:auto;margin:0 7px 0 0;accent-color:#a876da}#meeme-translation .mt-check{display:flex;align-items:center}
-#meeme-translation textarea{min-height:130px;resize:vertical;line-height:1.6}#meeme-translation small{display:block;color:#a99ab9;font-size:12px}
-#meeme-translation .mt-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:10px;align-items:start}#meeme-translation .mt-prompt-row label{margin:0}#meeme-translation .mt-prompt-row select{margin-top:5px}
-#meeme-translation pre{max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#0a0b16;border:1px solid #382945;border-radius:7px;padding:10px;font-size:12px;scrollbar-width:thin}
-#meeme-translation p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}#meeme-translation .mt-actions{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px}
-#meeme-translation .mt-footer{padding:10px 16px;background:#131322;border-top:1px solid #413055;flex-shrink:0}#meeme-translation [data-status]{font-size:12px;color:#c7b9da;max-height:70px;overflow:auto}
-#meeme-translation [data-api-status]{font-size:13px;color:#dbc4ef}#meeme-translation .mt-hint{margin:7px 0 3px}
-@media(prefers-reduced-motion:reduce){#meeme-translation *,#meeme-translation *::before{transition:none!important}}
-@media(max-height:560px){#meeme-translation section{height:calc(100dvh - 70px)}#meeme-translation{bottom:8px}#meeme-translation .mt-head{padding:8px 14px}#meeme-translation .mt-footer{padding:6px 12px}}
-#meeme-translation [data-working="true"]{background:linear-gradient(110deg,#163c45,#20655d,#423073,#163c45);background-size:300% 100%;animation:mtWorking 2s linear infinite;border-color:#00ffcc;box-shadow:0 0 12px #00ffcc44;color:#d9fff7}
+#tutu-polish{position:fixed;right:16px;bottom:24px;z-index:10000;color:#eee8ff;font:14px/1.55 system-ui;text-align:left;color-scheme:dark}
+#tutu-polish *{box-sizing:border-box}#tutu-polish [hidden]{display:none!important}
+#tutu-polish section{width:min(500px,calc(100vw - 32px));height:min(760px,calc(100dvh - 100px));display:flex;flex-direction:column;background:linear-gradient(140deg,#170d2b,#090e1d);border:1px solid #7144a5;border-radius:16px;box-shadow:0 12px 45px #0009;overflow:hidden;margin-bottom:8px}
+#tutu-polish .mt-head{padding:16px 18px 12px;border-bottom:1px solid #413055;flex-shrink:0;background:#170f25}
+#tutu-polish .mt-heading{display:flex;gap:10px;align-items:center;justify-content:space-between}#tutu-polish .mt-heading strong{font-size:16px}
+#tutu-polish .mt-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 16px 12px;scrollbar-width:thin;scrollbar-color:#765391 #100d1e}
+#tutu-polish .mt-mode{padding:6px 0}#tutu-polish .mt-mode button{width:100%;margin:0}
+#tutu-polish button{font:inherit;color:#e8ddf8;background:#241735;border:1px solid #684583;border-radius:8px;padding:8px 10px;margin:3px 0;cursor:pointer;transition:background .16s,border-color .16s,transform .16s}
+#tutu-polish button:hover{background:#352047;border-color:#a17ac4}#tutu-polish button:active{transform:scale(.98)}#tutu-polish button:focus-visible{outline:2px solid #e4c0ff;outline-offset:2px}
+#tutu-polish button[data-on=true]{border-color:#26d2bd;background:#123c3b;color:#affff2}
+#tutu-polish button:disabled{opacity:.5;cursor:wait}#tutu-polish button.mt-compact{padding:5px 10px;font-size:12px}
+#tutu-polish .mt-group{border-top:1px dashed #60417f}
+#tutu-polish .mt-fold{width:100%;margin:0;border:0;border-radius:0;background:#140f23;padding:13px 9px;text-align:left;display:flex;align-items:center;gap:9px;position:sticky;top:0;z-index:1;font-weight:600}
+#tutu-polish .mt-fold::before{content:'▸';display:inline-block;color:#ad85d5;transition:transform .2s}#tutu-polish .mt-fold[aria-expanded=true]{background:#332044;color:#edcaff;box-shadow:inset 3px 0 #b478e9}
+#tutu-polish .mt-fold[aria-expanded=true]::before{transform:rotate(90deg)}
+#tutu-polish .mt-pane{display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows .2s ease,opacity .18s,visibility .2s}
+#tutu-polish .mt-pane[data-expanded=true]{grid-template-rows:1fr;opacity:1;visibility:visible}
+#tutu-polish .mt-pane-inner{min-height:0;overflow:hidden}#tutu-polish .mt-pad{padding:3px 9px 16px}
+#tutu-polish label{display:block;margin:10px 0;color:#d5c7e4}#tutu-polish input,#tutu-polish textarea,#tutu-polish select{font:inherit;width:100%;color:#eee;background:#0b0c19;border:1px solid #574168;border-radius:7px;padding:8px;margin-top:5px}
+#tutu-polish input[type=checkbox]{width:auto;margin:0 7px 0 0;accent-color:#a876da}#tutu-polish .mt-check{display:flex;align-items:center}
+#tutu-polish textarea{min-height:130px;resize:vertical;line-height:1.6}#tutu-polish small{display:block;color:#a99ab9;font-size:12px}
+#tutu-polish .mt-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:10px;align-items:start}#tutu-polish .mt-prompt-row label{margin:0}#tutu-polish .mt-prompt-row select{margin-top:5px}
+#tutu-polish pre{max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#0a0b16;border:1px solid #382945;border-radius:7px;padding:10px;font-size:12px;scrollbar-width:thin}
+#tutu-polish p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}#tutu-polish .mt-actions{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px}
+#tutu-polish .mt-footer{padding:10px 16px;background:#131322;border-top:1px solid #413055;flex-shrink:0}#tutu-polish [data-status]{font-size:12px;color:#c7b9da;max-height:70px;overflow:auto}
+#tutu-polish [data-api-status]{font-size:13px;color:#dbc4ef}#tutu-polish .mt-hint{margin:7px 0 3px}
+@media(prefers-reduced-motion:reduce){#tutu-polish *,#tutu-polish *::before{transition:none!important}}
+@media(max-height:560px){#tutu-polish section{height:calc(100dvh - 70px)}#tutu-polish{bottom:8px}#tutu-polish .mt-head{padding:8px 14px}#tutu-polish .mt-footer{padding:6px 12px}}
+#tutu-polish [data-working="true"]{background:linear-gradient(110deg,#163c45,#20655d,#423073,#163c45);background-size:300% 100%;animation:mtWorking 2s linear infinite;border-color:#00ffcc;box-shadow:0 0 12px #00ffcc44;color:#d9fff7}
 @keyframes mtWorking{to{background-position:150% 0}}
-@media(prefers-reduced-motion:reduce){#meeme-translation [data-working="true"]{animation:none}}
-#meeme-translation .mt-inline-prompts{padding:8px 0 16px}
-#meeme-translation .mt-inline-prompts textarea{min-height:87px;height:87px}
+@media(prefers-reduced-motion:reduce){#tutu-polish [data-working="true"]{animation:none}}
+#tutu-polish .mt-inline-prompts{padding:8px 0 16px}
+#tutu-polish .mt-inline-prompts textarea{min-height:87px;height:87px}
 /* Keep the launcher and panel inside the visible viewport, outside body transforms. */
-#meeme-translation{left:calc(var(--mt-vx,0px) + 8px)!important;top:calc(var(--mt-vy,0px) + 8px)!important;right:auto!important;bottom:auto!important;width:calc(var(--mt-vw,100vw) - 16px);height:calc(var(--mt-vh,100dvh) - 16px);pointer-events:none;z-index:2147483000}
-#meeme-translation section{position:absolute;right:0;bottom:52px;width:min(500px,100%);height:min(760px,calc(100% - 52px));max-height:calc(100% - 52px);margin:0;pointer-events:auto}
-#meeme-translation [data-open]{position:absolute;right:0;bottom:0;margin:0;pointer-events:auto}
-#meeme-translation .mt-heading strong{min-width:0;overflow-wrap:anywhere}
-#meeme-translation .mt-prompt-row{grid-template-columns:minmax(0,1fr) minmax(76px,24%)}
-#meeme-translation input[data-remember]{appearance:none;-webkit-appearance:none;flex:none;width:22px;height:22px;padding:0;border:1px solid #8a6ba7;border-radius:6px;background:#0b0c19;display:inline-grid;place-content:center;cursor:pointer;transition:background .18s,border-color .18s,box-shadow .18s}
-#meeme-translation input[data-remember]:checked{background:#8855db;border-color:#ac83ee;box-shadow:0 0 8px #8855db55}
-#meeme-translation input[data-remember]::after{content:"";width:10px;height:6px;border-left:2px solid white;border-bottom:2px solid white;transform:rotate(-45deg) scale(.5);opacity:0;transition:transform .18s,opacity .18s}
-#meeme-translation input[data-remember]:checked::after{opacity:1;transform:rotate(-45deg) scale(1)}
-#meeme-translation input[data-remember]:focus-visible{outline:2px solid #00ffcc;outline-offset:3px}
-@media(max-height:360px){#meeme-translation .mt-head{padding:4px 10px}#meeme-translation .mt-footer{padding:4px 8px}#meeme-translation [data-status]{max-height:36px}}
-#meeme-translation .mt-prompt-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
-#meeme-translation .mt-prompt-col{min-width:0;border:1px solid #49345e;border-radius:8px;padding:10px;background:#130e2080}
-#meeme-translation .mt-prompt-col strong{display:block;color:#dcc6fb;font-size:14px}
-#meeme-translation .mt-prompt-col label{margin:6px 0}#meeme-translation .mt-prompt-col textarea{display:block;min-height:87px}
-#meeme-translation .mt-library{border-top:1px dashed #60417f;margin-top:16px;padding-top:8px}
-#meeme-translation .mt-template-new{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
-#meeme-translation .mt-template-new input{margin:0}
-#meeme-translation .mt-template-row{display:grid;grid-template-columns:minmax(0,1fr) 32px 32px 32px;gap:8px;margin-top:6px}
-#meeme-translation .mt-template-row button:first-child{text-align:left;overflow-wrap:anywhere}
-#meeme-translation .mt-template-row button{padding:7px}
-#meeme-translation .mt-template-editor{margin-top:12px;padding:10px;border:1px solid #9566c8;border-radius:8px}
-@media(max-width:350px){#meeme-translation .mt-prompt-columns{gap:6px}#meeme-translation .mt-prompt-col{padding:6px}#meeme-translation .mt-template-new{grid-template-columns:1fr}}
-#meeme-translation [data-template-list]{max-height:240px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
-#meeme-translation .mt-template-editor label{margin:6px 0}#meeme-translation [data-edit-rules]{min-height:100px;height:100px}
-#meeme-translation .mt-mode-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-#meeme-translation .mt-mode-pair .mt-mode{display:flex;min-width:0}
-#meeme-translation .mt-template-row{align-items:stretch;gap:6px;grid-template-columns:minmax(0,1fr) 34px 34px 34px}
-#meeme-translation .mt-template-row button{min-width:0;margin:0;min-height:36px}
-#meeme-translation .mt-template-row button:not(:first-child){display:flex;align-items:center;justify-content:center;padding:0;line-height:1;font-size:15px;text-align:center}
-#meeme-translation [data-template-current]>button,#meeme-translation [data-template-new],#meeme-translation [data-template-import]{width:100%}
-#meeme-translation [data-template-menu]{border:1px solid #60417f;border-radius:8px;padding:6px;margin:6px 0;background:#130e20}
-#meeme-translation [data-template-new]{margin:0 0 6px;text-align:left}
-#meeme-translation [data-template-import]{margin-top:8px}
-#meeme-translation .mt-default-row{grid-template-columns:minmax(0,1fr) 34px}
+#tutu-polish{left:calc(var(--mt-vx,0px) + 8px)!important;top:calc(var(--mt-vy,0px) + 8px)!important;right:auto!important;bottom:auto!important;width:calc(var(--mt-vw,100vw) - 16px);height:calc(var(--mt-vh,100dvh) - 16px);pointer-events:none;z-index:2147483000}
+#tutu-polish section{position:absolute;right:0;bottom:52px;width:min(500px,100%);height:min(760px,calc(100% - 52px));max-height:calc(100% - 52px);margin:0;pointer-events:auto}
+#tutu-polish [data-open]{position:absolute;right:0;bottom:0;margin:0;pointer-events:auto}
+#tutu-polish .mt-heading strong{min-width:0;overflow-wrap:anywhere}
+#tutu-polish .mt-prompt-row{grid-template-columns:minmax(0,1fr) minmax(76px,24%)}
+#tutu-polish input[data-remember]{appearance:none;-webkit-appearance:none;flex:none;width:22px;height:22px;padding:0;border:1px solid #8a6ba7;border-radius:6px;background:#0b0c19;display:inline-grid;place-content:center;cursor:pointer;transition:background .18s,border-color .18s,box-shadow .18s}
+#tutu-polish input[data-remember]:checked{background:#8855db;border-color:#ac83ee;box-shadow:0 0 8px #8855db55}
+#tutu-polish input[data-remember]::after{content:"";width:10px;height:6px;border-left:2px solid white;border-bottom:2px solid white;transform:rotate(-45deg) scale(.5);opacity:0;transition:transform .18s,opacity .18s}
+#tutu-polish input[data-remember]:checked::after{opacity:1;transform:rotate(-45deg) scale(1)}
+#tutu-polish input[data-remember]:focus-visible{outline:2px solid #00ffcc;outline-offset:3px}
+@media(max-height:360px){#tutu-polish .mt-head{padding:4px 10px}#tutu-polish .mt-footer{padding:4px 8px}#tutu-polish [data-status]{max-height:36px}}
+#tutu-polish .mt-prompt-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+#tutu-polish .mt-prompt-col{min-width:0;border:1px solid #49345e;border-radius:8px;padding:10px;background:#130e2080}
+#tutu-polish .mt-prompt-col strong{display:block;color:#dcc6fb;font-size:14px}
+#tutu-polish .mt-prompt-col label{margin:6px 0}#tutu-polish .mt-prompt-col textarea{display:block;min-height:87px}
+#tutu-polish .mt-library{border-top:1px dashed #60417f;margin-top:16px;padding-top:8px}
+#tutu-polish .mt-template-new{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+#tutu-polish .mt-template-new input{margin:0}
+#tutu-polish .mt-template-row{display:grid;grid-template-columns:minmax(0,1fr) 32px 32px 32px;gap:8px;margin-top:6px}
+#tutu-polish .mt-template-row button:first-child{text-align:left;overflow-wrap:anywhere}
+#tutu-polish .mt-template-row button{padding:7px}
+#tutu-polish .mt-template-editor{margin-top:12px;padding:10px;border:1px solid #9566c8;border-radius:8px}
+@media(max-width:350px){#tutu-polish .mt-prompt-columns{gap:6px}#tutu-polish .mt-prompt-col{padding:6px}#tutu-polish .mt-template-new{grid-template-columns:1fr}}
+#tutu-polish [data-template-list]{max-height:240px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+#tutu-polish .mt-template-editor label{margin:6px 0}#tutu-polish [data-edit-rules]{min-height:100px;height:100px}
+#tutu-polish .mt-mode-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#tutu-polish .mt-mode-pair .mt-mode{display:flex;min-width:0}
+#tutu-polish .mt-template-row{align-items:stretch;gap:6px;grid-template-columns:minmax(0,1fr) 34px 34px 34px}
+#tutu-polish .mt-template-row button{min-width:0;margin:0;min-height:36px}
+#tutu-polish .mt-template-row button:not(:first-child){display:flex;align-items:center;justify-content:center;padding:0;line-height:1;font-size:15px;text-align:center}
+#tutu-polish [data-template-current]>button,#tutu-polish [data-template-new],#tutu-polish [data-template-import]{width:100%}
+#tutu-polish [data-template-menu]{border:1px solid #60417f;border-radius:8px;padding:6px;margin:6px 0;background:#130e20}
+#tutu-polish [data-template-new]{margin:0 0 6px;text-align:left}
+#tutu-polish [data-template-import]{margin-top:8px}
+#tutu-polish .mt-default-row{grid-template-columns:minmax(0,1fr) 34px}
 /* Isolate the checkmark from host theme pseudo-elements. */
-#meeme-translation input[data-remember]{position:relative;appearance:none!important;-webkit-appearance:none!important;background-image:none!important;color:transparent!important}
-#meeme-translation input[data-remember]::before{content:none!important;display:none!important}
-#meeme-translation input[data-remember]::after{content:""!important;position:absolute!important;display:block!important;left:50%!important;top:45%!important;margin:0!important;width:10px!important;height:6px!important;background:none!important;border:0!important;border-left:2px solid #fff!important;border-bottom:2px solid #fff!important;box-shadow:none!important;transform:translate(-50%,-50%) rotate(-45deg)!important;opacity:0!important}
-#meeme-translation input[data-remember]:checked::after{opacity:1!important}
-#meeme-translation .mt-key-row,#meeme-translation .mt-model-row{display:flex;align-items:center;gap:12px}
-#meeme-translation .mt-key-row{justify-content:space-between}#meeme-translation .mt-key-row button,#meeme-translation .mt-model-row button{flex-shrink:0}
-#meeme-translation .mt-model-row small{min-width:0}#meeme-translation select:disabled{opacity:.45;cursor:not-allowed}
-#meeme-translation .mt-picker-line .mt-template-row{margin-top:0}.mt-picker-line{display:flex;gap:8px;align-items:stretch}.mt-picker-line [data-template-current]{flex:1;min-width:0}#meeme-translation .mt-picker-line [data-template-import]{flex:0 0 36px;width:36px;margin:0;padding:0;display:grid;place-items:center;font-size:15px}#meeme-translation [data-template-confirm]{width:100%;margin:10px 0}#meeme-translation [data-template-confirm][hidden]{display:none!important}
-#meeme-translation #mt-rules .mt-pad,#meeme-translation #mt-terms .mt-pad{padding-top:16px;padding-bottom:16px}
-#meeme-translation .mt-protection-settings{display:grid;gap:24px}
-#meeme-translation .mt-setting-block{display:grid;gap:10px}
-#meeme-translation .mt-setting-block label{display:grid;gap:8px;margin:0}
-#meeme-translation .mt-setting-block input,#meeme-translation .mt-setting-block textarea,#meeme-translation .mt-setting-block small,#meeme-translation .mt-setting-block button{margin:0}
-#meeme-translation .mt-setting-block button{justify-self:start}
+#tutu-polish input[data-remember]{position:relative;appearance:none!important;-webkit-appearance:none!important;background-image:none!important;color:transparent!important}
+#tutu-polish input[data-remember]::before{content:none!important;display:none!important}
+#tutu-polish input[data-remember]::after{content:""!important;position:absolute!important;display:block!important;left:50%!important;top:45%!important;margin:0!important;width:10px!important;height:6px!important;background:none!important;border:0!important;border-left:2px solid #fff!important;border-bottom:2px solid #fff!important;box-shadow:none!important;transform:translate(-50%,-50%) rotate(-45deg)!important;opacity:0!important}
+#tutu-polish input[data-remember]:checked::after{opacity:1!important}
+#tutu-polish .mt-key-row,#tutu-polish .mt-model-row{display:flex;align-items:center;gap:12px}
+#tutu-polish .mt-key-row{justify-content:space-between}#tutu-polish .mt-key-row button,#tutu-polish .mt-model-row button{flex-shrink:0}
+#tutu-polish .mt-model-row small{min-width:0}#tutu-polish select:disabled{opacity:.45;cursor:not-allowed}
+#tutu-polish .mt-picker-line .mt-template-row{margin-top:0}.mt-picker-line{display:flex;gap:8px;align-items:stretch}.mt-picker-line [data-template-current]{flex:1;min-width:0}#tutu-polish .mt-picker-line [data-template-import]{flex:0 0 36px;width:36px;margin:0;padding:0;display:grid;place-items:center;font-size:15px}#tutu-polish [data-template-confirm]{width:100%;margin:10px 0}#tutu-polish [data-template-confirm][hidden]{display:none!important}
+#tutu-polish #mt-rules .mt-pad,#tutu-polish #mt-terms .mt-pad{padding-top:16px;padding-bottom:16px}
+#tutu-polish .mt-protection-settings{display:grid;gap:24px}
+#tutu-polish .mt-setting-block{display:grid;gap:10px}
+#tutu-polish .mt-setting-block label{display:grid;gap:8px;margin:0}
+#tutu-polish .mt-setting-block input,#tutu-polish .mt-setting-block textarea,#tutu-polish .mt-setting-block small,#tutu-polish .mt-setting-block button{margin:0}
+#tutu-polish .mt-setting-block button{justify-self:start}
 </style>
-<section hidden aria-label="咩咩润色工具">
-  <header class="mt-head"><div class="mt-heading"><strong>咩咩润色工具</strong><button type="button" data-close class="mt-compact">收起面板</button></div><small data-card></small></header>
+<section hidden aria-label="tutu">
+  <header class="mt-head"><div class="mt-heading"><strong>tutu</strong><button type="button" data-close class="mt-compact">收起面板</button></div><small data-card></small></header>
   <div class="mt-body" data-scroll>
     <div class="mt-mode-pair"><div class="mt-mode"><button type="button" data-mode aria-pressed="false">当前：翻译模式</button></div>
     <div class="mt-mode"><button type="button" data-auto aria-pressed="false">自动处理：关闭</button></div></div>
@@ -412,7 +412,7 @@ function transferProtected(target,reference,current,tags) {
   function closeTemplateEditor(){creatingTemplate=false;el('template-confirm').hidden=true;menuOpen=false;el('template-menu').hidden=true;editingTemplate=null;el('template-editor').hidden=true;renderLibrary();}
   function editTemplate(t,creating=false){creatingTemplate=creating;el('template-confirm').hidden=!creating;el('editor-hint').textContent=isDefault(t)?'默认设置 · 只读，可选中文字复制':creating?'自动保存 · 点击上方确定收起':'自动保存 · 再点 ✏️ 收起';editingTemplate=t.id;el('template-editor').hidden=false;el('edit-name').value=t.name;el('edit-target').value=t.data.target;el('edit-rules').value=t.data.rules;for(const f of ['name','target','rules'])el('edit-'+f).readOnly=isDefault(t);renderLibrary();el('template-editor').scrollIntoView?.({block:'nearest',behavior:'smooth'});}
   function exportTemplate(t){
-    const data={format:'meeme-prompt',version:1,mode:t.mode,name:t.name,target:t.data.target,rules:t.data.rules};
+    const data={format:'tutu-prompt',version:1,mode:t.mode,name:t.name,target:t.data.target,rules:t.data.rules};
     const url=host.URL.createObjectURL(new host.Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
     const a=doc.createElement('a');a.href=url;a.download=t.name.replace(/[\\/:*?"<>|]/g,'_').slice(0,80)+'.json';doc.body.appendChild(a);a.click();a.remove();host.setTimeout(()=>host.URL.revokeObjectURL(url),1000);
   }
@@ -444,7 +444,7 @@ function transferProtected(target,reference,current,tags) {
   el('template-import').onclick=()=>{try{templateGuard();el('template-file').click();}catch(e){say(e.message);}};
   el('template-confirm').onclick=()=>{try{templateGuard();closeTemplateEditor();menuOpen=true;renderLibrary();say('已完成编辑，内容已自动保存；可从列表选用。');}catch(e){say(e.message);}};
   el('template-file').onchange=async()=>{try{templateGuard();const file=el('template-file').files?.[0];if(!file)return;if(file.size>1024*1024)throw Error('文件超过1MB，未导入。');const v=JSON.parse(await file.text());templateGuard();
-    if(v.format!=='meeme-prompt'||v.version!==1||!['translate','polish'].includes(v.mode)||typeof v.name!=='string'||!v.name.trim()||v.name.length>80||typeof v.target!=='string'||typeof v.rules!=='string')throw Error('提示词文件格式不兼容，未导入。');
+    if(v.format!=='tutu-prompt'||v.version!==1||!['translate','polish'].includes(v.mode)||typeof v.name!=='string'||!v.name.trim()||v.name.length>80||typeof v.target!=='string'||typeof v.rules!=='string')throw Error('提示词文件格式不兼容，未导入。');
     library.unshift({id:newId(),mode:v.mode,name:v.name,data:{target:v.target,rules:v.rules}});persist();renderLibrary();say('已导入「'+v.name+'」到'+(v.mode==='polish'?'润色':'翻译')+'提示词库。');
   }catch(e){say('导入失败：'+e.message);}finally{el('template-file').value='';}};
   function redact(value){let text=typeof value==='string'?value:JSON.stringify(value,null,2);for(const key of redactions)if(key)text=text.split(key).join('[密钥已隐藏]');return text;}
@@ -592,9 +592,6 @@ function transferProtected(target,reference,current,tags) {
       if(record.owner!==generation||record.owner.stopped||record.scope!==scope()||init.signal?.aborted)throw Error('请求已过期、取消或聊天已改变，未替换。');
       if(![undefined,'normal','swipe','regenerate'].includes(generation.type))throw Error('本次为续写或其他不支持的生成类型，保留原请求。');
       if(ctx().mainApi!=='openai')throw Error('当前主接口不是酒馆聊天补全，未替换。');
-      // The ABC test script can rebuild the messages after its own side request.
-      // Avoid changing the input that its history mapper expects in either load order.
-      if(host.__meemeCreativeTest01)throw Error('检测到创作辅助测试脚本：本版暂不叠加换回原文，请停用创作辅助后单独测试。');
       if(!record.backup||!matchesAny(record.backup)||record.identity!==ctx().chat[record.backup.id])throw Error('最后回复没有有效且匹配的原文备份，保留原请求。');
       const payload=JSON.parse(init.body);
       // Match the host's prompt-filtered copy, not the stored display copy.
